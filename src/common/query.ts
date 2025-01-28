@@ -31,7 +31,7 @@ if (pgTypes) {
     })
 }
 
-export default async function query(sql, params) {
+function init() {
     if (!pool) {
         pool = new pg.Pool({
             host: process.env.postgres_hostname,
@@ -42,7 +42,18 @@ export default async function query(sql, params) {
             idleTimeoutMillis: 30000,
         })
     }
+}
+
+export async function query(sql, params) {
+    init()
+
     const result = await pool.query(sql, params)
 
     return result.rows
+}
+
+export async function getClient() {
+    init()
+
+    return pool.connect()
 }

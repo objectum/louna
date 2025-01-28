@@ -1,5 +1,5 @@
 import { ProductDTO, PurchaseDTO, CreatePurchaseDTO } from '../dto'
-import { query } from '../common'
+import { query, getClient } from '../common'
 import { BadRequestError } from 'routing-controllers'
 
 export default class ProductRepository {
@@ -19,23 +19,34 @@ export default class ProductRepository {
             throw new BadRequestError(`Unknown userId: ${userId}`)
         }
         const price = productRows[0].price
-        // todo: transaction
-        const balanceRows = await query('update users set balance = balance - $1 where id = $2 returning balance', [
-            price,
-            userId,
-        ])
-        const purchaseRows = await query(
-            'insert into purchases(date, "userId", "productId", price) values(now(), $1, $2, $3) returning id, date',
-            [userId, productId, price],
-        )
+        const client = await getClient()
 
-        return {
-            id: purchaseRows[0].id,
-            date: purchaseRows[0].date,
-            productId,
-            userId,
-            price,
-            balance: balanceRows[0].balance,
+        try {
+            await client.query('begin')
+
+            const { rows: balanceRows } = await client.query('update users set balance = balance - $1 where id = $2 returning balance', [
+                price,
+                userId,
+            ])
+            const { rows: purchaseRows } = await client.query(
+                'insert into purchases(date, "userId", "productId", price) values(now(), $1, $2, $3) returning id, date',
+                [userId, productId, price],
+            )
+            await client.query('commit')
+
+            return {
+                id: purchaseRows[0].id,
+                date: purchaseRows[0].date,
+                productId,
+                userId,
+                price,
+                balance: balanceRows[0].balance,
+            }
+        } catch(err) {
+            await client.query('rollback')
+            throw err
+        } finally {
+            client.release()
         }
     }
 }
